@@ -40,14 +40,14 @@ def hello():
 @app.route('/api/generate_token', methods=['POST'])
 def generate_token():
     if not client:
-        logger.error("Database connection failed")
-        return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        logger.error("Ошибка подключения к базе данных")
+        return jsonify({'success': False, 'error': 'Ошибка подключения к базе данных'}), 500
 
     data = request.json
     telegram_id = data.get('telegram_id')
     
     if not telegram_id:
-        return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
+        return jsonify({'success': False, 'error': 'Не предоставлен Telegram ID'}), 400
 
     token = str(uuid.uuid4())
     expiration_time = datetime.utcnow() + timedelta(minutes=15)
@@ -72,20 +72,20 @@ def generate_token():
         upsert=True
     )
     
-    logger.info(f"Generated token for Telegram ID: {telegram_id}")
+    logger.info(f"Сгенерирован токен для Telegram ID: {telegram_id}")
     return jsonify({'success': True, 'token': token})
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
     if not client:
-        logger.error("Database connection failed")
-        return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        logger.error("Ошибка подключения к базе данных")
+        return jsonify({'success': False, 'error': 'Ошибка подключения к базе данных'}), 500
 
     data = request.json
     token = data.get('token')
 
     if not token:
-        return jsonify({'success': False, 'error': 'No token provided'}), 400
+        return jsonify({'success': False, 'error': 'Не предоставлен токен'}), 400
 
     user = users_collection.find_one({
         'temp_token': token,
@@ -93,7 +93,7 @@ def authenticate():
     })
 
     if not user:
-        return jsonify({'success': False, 'error': 'Invalid or expired token'}), 401
+        return jsonify({'success': False, 'error': 'Недействительный или истекший токен'}), 401
 
     session_token = str(uuid.uuid4())
     session_expiration = datetime.utcnow() + timedelta(days=7)
@@ -109,7 +109,7 @@ def authenticate():
         }
     )
 
-    logger.info(f"User authenticated: {user['telegram_id']}")
+    logger.info(f"Пользователь аутентифицирован: {user['telegram_id']}")
     return jsonify({
         'success': True,
         'universe_data': {
@@ -127,12 +127,12 @@ def authenticate():
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
     if not client:
-        logger.error("Database connection failed")
-        return jsonify({'success': False, 'error': 'Database connection failed'}), 500
+        logger.error("Ошибка подключения к базе данных")
+        return jsonify({'success': False, 'error': 'Ошибка подключения к базе данных'}), 500
 
     auth_header = request.headers.get('Authorization')
     if not auth_header:
-        return jsonify({'success': False, 'error': 'No authorization header'}), 401
+        return jsonify({'success': False, 'error': 'Отсутствует заголовок авторизации'}), 401
 
     token = auth_header.split(' ')[1]
     user = users_collection.find_one({
@@ -141,10 +141,10 @@ def update_user_data():
     })
 
     if not user:
-        return jsonify({'success': False, 'error': 'Invalid or expired session token'}), 401
+        return jsonify({'success': False, 'error': 'Недействительный или истекший токен сессии'}), 401
 
     data = request.json
-    logger.info(f"Received data for user {user['telegram_id']}: {data}")
+    logger.info(f"Получены данные для пользователя {user['telegram_id']}: {data}")
 
     try:
         result = users_collection.update_one(
@@ -152,16 +152,17 @@ def update_user_data():
             {'$set': {
                 'totalClicks': data['totalClicks'],
                 'upgrades': data['upgrades'],
-                'currentUniverse': data['currentUniverse']
+                'currentUniverse': data['currentUniverse'],
+                'last_updated': datetime.utcnow()
             }}
         )
         if result.modified_count > 0:
-            logger.info(f"Data updated for user {user['telegram_id']}")
+            logger.info(f"Данные обновлены для пользователя {user['telegram_id']}")
         else:
-            logger.warning(f"No changes made for user {user['telegram_id']}")
+            logger.warning(f"Изменения не внесены для пользователя {user['telegram_id']}")
         return jsonify({'success': True})
     except Exception as e:
-        logger.error(f"Error updating user data: {str(e)}")
+        logger.error(f"Ошибка обновления данных пользователя: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
