@@ -50,7 +50,7 @@ def generate_token():
         return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
     token = str(uuid.uuid4())
-    expiration_time = datetime.utcnow() + timedelta(minutes=15)  # Токен действителен 15 минут
+    expiration_time = datetime.utcnow() + timedelta(minutes=15)
     
     users_collection.update_one(
         {'telegram_id': telegram_id},
