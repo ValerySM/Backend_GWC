@@ -1,5 +1,4 @@
 import os
-import uuid
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -7,6 +6,7 @@ from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
+import uuid
 
 load_dotenv()
 
@@ -37,14 +37,20 @@ def hello():
     else:
         return "Hello, World! Warning: MongoDB connection failed."
 
-@app.route('/api/generate_token/<telegram_id>', methods=['GET'])
-def generate_token(telegram_id):
+@app.route('/api/generate_token', methods=['POST'])
+def generate_token():
     if not client:
         logger.error("Database connection failed")
         return jsonify({'success': False, 'error': 'Database connection failed'}), 500
 
+    data = request.json
+    telegram_id = data.get('telegram_id')
+    
+    if not telegram_id:
+        return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
+
     token = str(uuid.uuid4())
-    expiration_time = datetime.utcnow() + timedelta(minutes=5)  # Токен действителен 5 минут
+    expiration_time = datetime.utcnow() + timedelta(minutes=15)
     
     users_collection.update_one(
         {'telegram_id': telegram_id},
@@ -66,6 +72,7 @@ def generate_token(telegram_id):
         upsert=True
     )
     
+    logger.info(f"Generated token for Telegram ID: {telegram_id}")
     return jsonify({'success': True, 'token': token})
 
 @app.route('/api/auth', methods=['POST'])
@@ -102,6 +109,7 @@ def authenticate():
         }
     )
 
+    logger.info(f"User authenticated: {user['telegram_id']}")
     return jsonify({
         'success': True,
         'universe_data': {
