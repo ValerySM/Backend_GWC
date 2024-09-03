@@ -61,10 +61,15 @@ def generate_token():
             },
             '$setOnInsert': {
                 'totalClicks': 0,
-                'upgrades': {
-                    'damageLevel': 1,
-                    'energyLevel': 1,
-                    'regenLevel': 1
+                'universes': {
+                    'default': {
+                        'damageLevel': 1,
+                        'energyLevel': 1,
+                        'regenLevel': 1,
+                        'energy': 1000,
+                        'energyMax': 1000,
+                        'regenRate': 1
+                    }
                 },
                 'currentUniverse': 'default'
             }
@@ -114,10 +119,15 @@ def authenticate():
         'success': True,
         'universe_data': {
             'totalClicks': user.get('totalClicks', 0),
-            'upgrades': user.get('upgrades', {
-                'damageLevel': 1,
-                'energyLevel': 1,
-                'regenLevel': 1
+            'universes': user.get('universes', {
+                'default': {
+                    'damageLevel': 1,
+                    'energyLevel': 1,
+                    'regenLevel': 1,
+                    'energy': 1000,
+                    'energyMax': 1000,
+                    'regenRate': 1
+                }
             }),
             'currentUniverse': user.get('currentUniverse', 'default')
         },
@@ -147,14 +157,26 @@ def update_user_data():
     logger.info(f"Received data for user {user['telegram_id']}: {data}")
 
     try:
+        update_data = {
+            'totalClicks': data['totalClicks'],
+            'currentUniverse': data['currentUniverse'],
+        }
+        
+        # Update universe-specific data
+        if 'universes' not in user:
+            user['universes'] = {}
+        if data['currentUniverse'] not in user['universes']:
+            user['universes'][data['currentUniverse']] = {}
+        
+        user['universes'][data['currentUniverse']].update(data['upgrades'])
+        
+        update_data['universes'] = user['universes']
+
         result = users_collection.update_one(
             {'_id': user['_id']},
-            {'$set': {
-                'totalClicks': data['totalClicks'],
-                'upgrades': data['upgrades'],
-                'currentUniverse': data['currentUniverse']
-            }}
+            {'$set': update_data}
         )
+        
         if result.modified_count > 0:
             logger.info(f"Data updated for user {user['telegram_id']}")
         else:
