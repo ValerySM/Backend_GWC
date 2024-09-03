@@ -47,6 +47,8 @@ def authenticate():
     telegram_id = data.get('telegram_id')
     username = data.get('username')
 
+    logger.info(f"Auth request for: {telegram_id}, {username}")
+
     if not telegram_id:
         return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
@@ -58,19 +60,13 @@ def authenticate():
             'username': username,
             'totalClicks': 0,
             'currentUniverse': 'default',
-            'universes': {
-                'default': {
-                    'damageLevel': 1,
-                    'energyLevel': 1,
-                    'regenLevel': 1,
-                    'energy': 1000,
-                    'energyMax': 1000,
-                    'regenRate': 1
-                }
-            }
+            'universes': {}  # Пустой объект вместо дефолтных значений
         }
         users_collection.insert_one(new_user)
         user = new_user
+        logger.info(f"Created new user: {telegram_id}")
+    else:
+        logger.info(f"Existing user found: {telegram_id}")
 
     logger.info(f"User authenticated: {user['telegram_id']}")
     return jsonify({
@@ -86,6 +82,9 @@ def authenticate():
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
+    logger.info(f"Received update request. Headers: {request.headers}")
+    logger.info(f"Request data: {request.get_data(as_text=True)}")
+
     if not client:
         logger.error("Database connection failed")
         return jsonify({'success': False, 'error': 'Database connection failed'}), 500
@@ -116,12 +115,20 @@ def update_user_data():
         {'$set': update_data}
     )
 
+    logger.info(f"Update result: {result.modified_count}")
+
     if result.modified_count > 0:
         logger.info(f"Data updated for user {telegram_id}")
         return jsonify({'success': True})
     else:
         logger.warning(f"No changes made for user {telegram_id}")
         return jsonify({'success': False, 'error': 'No changes made'}), 400
+
+@app.route('/api/log', methods=['POST'])
+def log_message():
+    data = request.json
+    logger.info(f"Client log: {data}")
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
