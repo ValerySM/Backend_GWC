@@ -142,6 +142,7 @@ def update_user_data():
 
     auth_header = request.headers.get('Authorization')
     if not auth_header:
+        logger.error("No authorization header")
         return jsonify({'success': False, 'error': 'No authorization header'}), 401
 
     token = auth_header.split(' ')[1]
@@ -151,6 +152,7 @@ def update_user_data():
     })
 
     if not user:
+        logger.error(f"Invalid or expired session token: {token}")
         return jsonify({'success': False, 'error': 'Invalid or expired session token'}), 401
 
     data = request.json
@@ -171,6 +173,8 @@ def update_user_data():
         user['universes'][data['currentUniverse']].update(data['upgrades'])
         
         update_data['universes'] = user['universes']
+
+        logger.info(f"Updating data for user {user['telegram_id']}: {update_data}")
 
         result = users_collection.update_one(
             {'_id': user['_id']},
