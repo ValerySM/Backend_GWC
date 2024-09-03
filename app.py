@@ -136,6 +136,8 @@ def authenticate():
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
+    print("Received update request")
+    print(f"Request data: {request.json}")
     if not client:
         logger.error("Database connection failed")
         return jsonify({'success': False, 'error': 'Database connection failed'}), 500
