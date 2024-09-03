@@ -50,6 +50,7 @@ def authenticate():
     logger.info(f"Auth request for: {telegram_id}, {username}")
 
     if not telegram_id:
+        logger.error("No Telegram ID provided")
         return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
     user = users_collection.find_one({'telegram_id': telegram_id})
@@ -60,15 +61,15 @@ def authenticate():
             'username': username,
             'totalClicks': 0,
             'currentUniverse': 'default',
-            'universes': {}  # Пустой объект вместо дефолтных значений
+            'universes': {}
         }
-        users_collection.insert_one(new_user)
+        result = users_collection.insert_one(new_user)
+        logger.info(f"Created new user with ID: {result.inserted_id}")
         user = new_user
-        logger.info(f"Created new user: {telegram_id}")
     else:
-        logger.info(f"Existing user found: {telegram_id}")
+        logger.info(f"Existing user found: {user['_id']}")
 
-    logger.info(f"User authenticated: {user['telegram_id']}")
+    logger.info(f"Returning data for user: {user}")
     return jsonify({
         'success': True,
         'telegram_id': user['telegram_id'],
