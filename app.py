@@ -115,6 +115,8 @@ def authenticate():
     )
 
     logger.info(f"User authenticated: {user['telegram_id']}")
+    logger.info(f"Created session token: {session_token} for user {user['telegram_id']}")
+    
     return jsonify({
         'success': True,
         'universe_data': {
@@ -136,8 +138,6 @@ def authenticate():
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
-    print("Received update request")
-    print(f"Request data: {request.json}")
     if not client:
         logger.error("Database connection failed")
         return jsonify({'success': False, 'error': 'Database connection failed'}), 500
@@ -154,7 +154,7 @@ def update_user_data():
     })
 
     if not user:
-        logger.error(f"Invalid or expired session token: {token}")
+        logger.error(f"User not found for token: {token}")
         return jsonify({'success': False, 'error': 'Invalid or expired session token'}), 401
 
     data = request.json
@@ -164,17 +164,8 @@ def update_user_data():
         update_data = {
             'totalClicks': data['totalClicks'],
             'currentUniverse': data['currentUniverse'],
+            f"universes.{data['currentUniverse']}": data['upgrades']
         }
-        
-        # Update universe-specific data
-        if 'universes' not in user:
-            user['universes'] = {}
-        if data['currentUniverse'] not in user['universes']:
-            user['universes'][data['currentUniverse']] = {}
-        
-        user['universes'][data['currentUniverse']].update(data['upgrades'])
-        
-        update_data['universes'] = user['universes']
 
         logger.info(f"Updating data for user {user['telegram_id']}: {update_data}")
 
