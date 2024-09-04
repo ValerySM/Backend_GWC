@@ -1,3 +1,42 @@
+import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+from dotenv import load_dotenv
+import logging
+from datetime import datetime, timedelta
+import uuid
+
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+mongodb_uri = os.getenv('MONGODB_URI')
+if not mongodb_uri:
+    raise ValueError("No MONGODB_URI set for Flask application")
+
+try:
+    client = MongoClient(mongodb_uri)
+    client.admin.command('ismaster')
+    db = client['universe_game_db']
+    users_collection = db['users']
+    logger.info("Successfully connected to MongoDB")
+except ConnectionFailure:
+    logger.error("Server not available")
+    client = None
+
+@app.route('/')
+def hello():
+    if client:
+        return "Hello, World! MongoDB connected successfully."
+    else:
+        return "Hello, World! Warning: MongoDB connection failed."
+
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
     if not client:
@@ -67,3 +106,6 @@ def update_user_data():
     else:
         logger.warning(f"No changes made for user {telegram_id}")
         return jsonify({'success': False, 'error': 'No changes made'}), 400
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
