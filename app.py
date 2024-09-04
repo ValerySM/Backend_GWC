@@ -1,8 +1,9 @@
 import os
+import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
+from pymongo.errors import ConnectionFailure, AutoReconnect
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
@@ -20,15 +21,35 @@ mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
+def get_mongo_client():
+    for attempt in range(MAX_RETRIES):
+        try:
+            client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            client.admin.command('ismaster')
+            logger.info("Successfully connected to MongoDB")
+            return client
+        except (ConnectionFailure, AutoReconnect) as e:
+            if attempt < MAX_RETRIES - 1:
+                logger.warning(f"Connection attempt {attempt + 1} failed. Retrying in {RETRY_DELAY} seconds...")
+                time.sleep(RETRY_DELAY)
+            else:
+                logger.error("Failed to connect to MongoDB after multiple attempts")
+                raise
+
 try:
-    client = MongoClient(mongodb_uri)
-    client.admin.command('ismaster')
+    client = get_mongo_client()
     db = client['universe_game_db']
     users_collection = db['users']
-    logger.info("Successfully connected to MongoDB")
-except ConnectionFailure:
-    logger.error("Server not available")
+    users_collection.create_index("telegram_id", unique=True)
+    logger.info("Successfully initialized MongoDB connection and created index")
+except Exception as e:
+    logger.error(f"Failed to initialize MongoDB connection: {str(e)}")
     client = None
+    db = None
+    users_collection = None
 
 @app.route('/')
 def hello():
@@ -53,33 +74,37 @@ def authenticate():
         logger.error("No Telegram ID provided")
         return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-    user = users_collection.find_one({'telegram_id': telegram_id})
+    try:
+        user = users_collection.find_one({'telegram_id': telegram_id})
 
-    if not user:
-        new_user = {
-            'telegram_id': telegram_id,
-            'username': username,
-            'totalClicks': 0,
-            'currentUniverse': 'default',
-            'universes': {}
-        }
-        result = users_collection.insert_one(new_user)
-        logger.info(f"Created new user with ID: {result.inserted_id}")
-        user = new_user
-    else:
-        logger.info(f"Existing user found: {user['_id']}")
+        if not user:
+            new_user = {
+                'telegram_id': telegram_id,
+                'username': username,
+                'totalClicks': 0,
+                'currentUniverse': 'default',
+                'universes': {}
+            }
+            result = users_collection.insert_one(new_user)
+            logger.info(f"Created new user with ID: {result.inserted_id}")
+            user = new_user
+        else:
+            logger.info(f"Existing user found: {user['_id']}")
 
-    logger.info(f"Returning data for user: {user}")
-    return jsonify({
-        'success': True,
-        'telegram_id': user['telegram_id'],
-        'username': user['username'],
-        'universe_data': {
-            'totalClicks': user.get('totalClicks', 0),
-            'universes': user.get('universes', {}),
-            'currentUniverse': user.get('currentUniverse', 'default')
-        }
-    })
+        logger.info(f"Returning data for user: {user}")
+        return jsonify({
+            'success': True,
+            'telegram_id': user['telegram_id'],
+            'username': user['username'],
+            'universe_data': {
+                'totalClicks': user.get('totalClicks', 0),
+                'universes': user.get('universes', {}),
+                'currentUniverse': user.get('currentUniverse', 'default')
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error during authentication: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
@@ -97,33 +122,32 @@ def update_user_data():
         logger.error("No Telegram ID provided")
         return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-    user = users_collection.find_one({'telegram_id': telegram_id})
+    try:
+        update_data = {
+            'totalClicks': data['totalClicks'],
+            'currentUniverse': data['currentUniverse'],
+            f"universes.{data['currentUniverse']}": data['upgrades']
+        }
 
-    if not user:
-        logger.error(f"User not found for Telegram ID: {telegram_id}")
-        return jsonify({'success': False, 'error': 'User not found'}), 404
+        logger.info(f"Updating data for user {telegram_id}: {update_data}")
 
-    update_data = {
-        'totalClicks': data['totalClicks'],
-        'currentUniverse': data['currentUniverse'],
-        f"universes.{data['currentUniverse']}": data['upgrades']
-    }
+        result = users_collection.update_one(
+            {'telegram_id': telegram_id},
+            {'$set': update_data},
+            upsert=True
+        )
 
-    logger.info(f"Updating data for user {telegram_id}: {update_data}")
+        logger.info(f"Update result: {result.modified_count}")
 
-    result = users_collection.update_one(
-        {'telegram_id': telegram_id},
-        {'$set': update_data}
-    )
-
-    logger.info(f"Update result: {result.modified_count}")
-
-    if result.modified_count > 0:
-        logger.info(f"Data updated for user {telegram_id}")
-        return jsonify({'success': True})
-    else:
-        logger.warning(f"No changes made for user {telegram_id}")
-        return jsonify({'success': False, 'error': 'No changes made'}), 400
+        if result.modified_count > 0 or result.upserted_id:
+            logger.info(f"Data updated for user {telegram_id}")
+            return jsonify({'success': True})
+        else:
+            logger.warning(f"No changes made for user {telegram_id}")
+            return jsonify({'success': False, 'error': 'No changes made'}), 400
+    except Exception as e:
+        logger.error(f"Error updating user data: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/log', methods=['POST'])
 def log_message():
