@@ -72,7 +72,7 @@ def authenticate():
     logger.info(f"Returning data for user: {user}")
     return jsonify({
         'success': True,
-        'telegram_id': str(user['telegram_id']),
+        'telegram_id': user['telegram_id'],
         'username': user['username'],
         'universe_data': {
             'totalClicks': user.get('totalClicks', 0),
@@ -83,14 +83,15 @@ def authenticate():
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
+    logger.info(f"Received update request. Headers: {request.headers}")
+    logger.info(f"Request data: {request.get_data(as_text=True)}")
+
     if not client:
         logger.error("Database connection failed")
         return jsonify({'success': False, 'error': 'Database connection failed'}), 500
 
     data = request.json
     telegram_id = data.get('telegram_id')
-
-    logger.info(f"Received update request. Data: {data}")
 
     if not telegram_id:
         logger.error("No Telegram ID provided")
@@ -114,6 +115,8 @@ def update_user_data():
         {'telegram_id': telegram_id},
         {'$set': update_data}
     )
+
+    logger.info(f"Update result: {result.modified_count}")
 
     if result.modified_count > 0:
         logger.info(f"Data updated for user {telegram_id}")
