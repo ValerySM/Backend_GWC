@@ -1,9 +1,9 @@
 import os
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, AutoReconnect
+from pymongo.errors import ConnectionFailure, AutoReconnect, ServerSelectionTimeoutError
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
@@ -21,60 +21,62 @@ mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 RETRY_DELAY = 5  # seconds
 
 def get_mongo_client():
     for attempt in range(MAX_RETRIES):
         try:
             client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            # Проверка соединения
             client.admin.command('ismaster')
             logger.info("Successfully connected to MongoDB")
             return client
-        except (ConnectionFailure, AutoReconnect) as e:
+        except (ConnectionFailure, AutoReconnect, ServerSelectionTimeoutError) as e:
+            logger.warning(f"Connection attempt {attempt + 1} failed: {str(e)}")
             if attempt < MAX_RETRIES - 1:
-                logger.warning(f"Connection attempt {attempt + 1} failed. Retrying in {RETRY_DELAY} seconds...")
+                logger.info(f"Retrying in {RETRY_DELAY} seconds...")
                 time.sleep(RETRY_DELAY)
             else:
                 logger.error("Failed to connect to MongoDB after multiple attempts")
                 raise
 
-try:
-    client = get_mongo_client()
-    db = client['universe_game_db']
-    users_collection = db['users']
-    users_collection.create_index("telegram_id", unique=True)
-    logger.info("Successfully initialized MongoDB connection and created index")
-except Exception as e:
-    logger.error(f"Failed to initialize MongoDB connection: {str(e)}")
-    client = None
-    db = None
-    users_collection = None
+def get_db():
+    if not hasattr(g, 'mongo_client'):
+        g.mongo_client = get_mongo_client()
+    return g.mongo_client['universe_game_db']
+
+@app.teardown_appcontext
+def close_mongo_connection(exception):
+    client = getattr(g, 'mongo_client', None)
+    if client is not None:
+        client.close()
 
 @app.route('/')
 def hello():
-    if client:
+    try:
+        db = get_db()
         return "Hello, World! MongoDB connected successfully."
-    else:
+    except Exception as e:
+        logger.error(f"MongoDB connection failed: {str(e)}")
         return "Hello, World! Warning: MongoDB connection failed."
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
-    if not client:
-        logger.error("Database connection failed")
-        return jsonify({'success': False, 'error': 'Database connection failed'}), 500
-
-    data = request.json
-    telegram_id = data.get('telegram_id')
-    username = data.get('username')
-
-    logger.info(f"Auth request for: {telegram_id}, {username}")
-
-    if not telegram_id:
-        logger.error("No Telegram ID provided")
-        return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
-
     try:
+        db = get_db()
+        users_collection = db['users']
+
+        data = request.json
+        telegram_id = data.get('telegram_id')
+        username = data.get('username')
+
+        logger.info(f"Auth request for: {telegram_id}, {username}")
+
+        if not telegram_id:
+            logger.error("No Telegram ID provided")
+            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
+
         user = users_collection.find_one({'telegram_id': telegram_id})
 
         if not user:
@@ -90,6 +92,10 @@ def authenticate():
             user = new_user
         else:
             logger.info(f"Existing user found: {user['_id']}")
+            # Обновляем имя пользователя, если оно изменилось
+            if user['username'] != username:
+                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
+                user['username'] = username
 
         logger.info(f"Returning data for user: {user}")
         return jsonify({
@@ -108,28 +114,34 @@ def authenticate():
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
-    logger.info(f"Received update request. Headers: {request.headers}")
-    logger.info(f"Request data: {request.get_data(as_text=True)}")
-
-    if not client:
-        logger.error("Database connection failed")
-        return jsonify({'success': False, 'error': 'Database connection failed'}), 500
-
-    data = request.json
-    telegram_id = data.get('telegram_id')
-
-    if not telegram_id:
-        logger.error("No Telegram ID provided")
-        return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
-
     try:
+        db = get_db()
+        users_collection = db['users']
+
+        logger.info(f"Received update request. Headers: {request.headers}")
+        logger.info(f"Request data: {request.get_data(as_text=True)}")
+
+        data = request.json
+        telegram_id = data.get('telegram_id')
+        total_clicks = data.get('totalClicks')
+
+        if not telegram_id:
+            logger.error("No Telegram ID provided")
+            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
+
+        if total_clicks is None:
+            logger.error("No totalClicks provided")
+            return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
+
         update_data = {
-            'totalClicks': data['totalClicks'],
-            'currentUniverse': data['currentUniverse'],
-            f"universes.{data['currentUniverse']}": data['upgrades']
+            'totalClicks': total_clicks,
+            'currentUniverse': data.get('currentUniverse', 'default'),
         }
 
-        logger.info(f"Updating data for user {telegram_id}: {update_data}")
+        # Обновляем данные текущей вселенной
+        current_universe = data.get('currentUniverse', 'default')
+        if 'upgrades' in data:
+            update_data[f"universes.{current_universe}"] = data['upgrades']
 
         result = users_collection.update_one(
             {'telegram_id': telegram_id},
@@ -151,9 +163,13 @@ def update_user_data():
 
 @app.route('/api/log', methods=['POST'])
 def log_message():
-    data = request.json
-    logger.info(f"Client log: {data}")
-    return jsonify({'success': True})
+    try:
+        data = request.json
+        logger.info(f"Client log: {data}")
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error logging message: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
