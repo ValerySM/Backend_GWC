@@ -21,35 +21,17 @@ mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
-MAX_RETRIES = 5
-RETRY_DELAY = 5  # seconds
-
-def get_mongo_client():
-    for attempt in range(MAX_RETRIES):
-        try:
-            client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-            client.admin.command('ismaster')
-            logger.info("Successfully connected to MongoDB")
-            return client
-        except (ConnectionFailure, AutoReconnect, ServerSelectionTimeoutError) as e:
-            logger.warning(f"Connection attempt {attempt + 1} failed: {str(e)}")
-            if attempt < MAX_RETRIES - 1:
-                logger.info(f"Retrying in {RETRY_DELAY} seconds...")
-                time.sleep(RETRY_DELAY)
-            else:
-                logger.error("Failed to connect to MongoDB after multiple attempts")
-                raise
-
 def get_db():
-    if not hasattr(g, 'mongo_client'):
-        g.mongo_client = get_mongo_client()
-    return g.mongo_client['universe_game_db']
+    if 'db' not in g:
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+        g.db = client['universe_game_db']
+    return g.db
 
 @app.teardown_appcontext
-def close_mongo_connection(exception):
-    client = getattr(g, 'mongo_client', None)
-    if client is not None:
-        client.close()
+def close_db(error):
+    db = g.pop('db', None)
+    if db is not None:
+        db.client.close()
 
 @app.route('/')
 def hello():
