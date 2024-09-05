@@ -1,22 +1,21 @@
 import os
-import time
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, AutoReconnect, ServerSelectionTimeoutError
 from dotenv import load_dotenv
 import logging
-from datetime import datetime, timedelta
-import uuid
 
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# MongoDB configuration
 mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
@@ -52,10 +51,7 @@ def authenticate():
         telegram_id = str(data.get('telegram_id'))
         username = data.get('username')
 
-        logger.info(f"Auth request for: {telegram_id}, {username}")
-
         if not telegram_id:
-            logger.error("No Telegram ID provided")
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
         user = users_collection.find_one({'telegram_id': telegram_id})
@@ -69,15 +65,12 @@ def authenticate():
                 'universes': {}
             }
             result = users_collection.insert_one(new_user)
-            logger.info(f"Created new user with ID: {result.inserted_id}")
             user = new_user
         else:
-            logger.info(f"Existing user found: {user['_id']}")
             if user['username'] != username:
                 users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
                 user['username'] = username
 
-        logger.info(f"Returning data for user: {user}")
         return jsonify({
             'success': True,
             'telegram_id': user['telegram_id'],
@@ -96,19 +89,14 @@ def update_user_data():
         db = get_db()
         users_collection = db['users']
 
-        logger.info(f"Received update request. Headers: {request.headers}")
-        logger.info(f"Request data: {request.get_data(as_text=True)}")
-
         data = request.json
         telegram_id = str(data.get('telegram_id'))
         total_clicks = data.get('totalClicks')
 
         if not telegram_id:
-            logger.error("No Telegram ID provided")
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
         if total_clicks is None:
-            logger.error("No totalClicks provided")
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
 
         update_data = {
@@ -120,21 +108,15 @@ def update_user_data():
         if 'upgrades' in data:
             update_data[f"universes.{current_universe}"] = data['upgrades']
 
-        logger.info(f"Updating data for user {telegram_id}: {update_data}")
-
         result = users_collection.update_one(
             {'telegram_id': telegram_id},
             {'$set': update_data},
             upsert=True
         )
 
-        logger.info(f"Update result: {result.modified_count}")
-
         if result.modified_count > 0 or result.upserted_id:
-            logger.info(f"Data updated for user {telegram_id}")
             return jsonify({'success': True})
         else:
-            logger.warning(f"No changes made for user {telegram_id}")
             return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
