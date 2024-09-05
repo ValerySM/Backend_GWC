@@ -28,7 +28,6 @@ def get_mongo_client():
     for attempt in range(MAX_RETRIES):
         try:
             client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-            # Проверка соединения
             client.admin.command('ismaster')
             logger.info("Successfully connected to MongoDB")
             return client
@@ -92,7 +91,6 @@ def authenticate():
             user = new_user
         else:
             logger.info(f"Existing user found: {user['_id']}")
-            # Обновляем имя пользователя, если оно изменилось
             if user['username'] != username:
                 users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
                 user['username'] = username
@@ -138,10 +136,11 @@ def update_user_data():
             'currentUniverse': data.get('currentUniverse', 'default'),
         }
 
-        # Обновляем данные текущей вселенной
         current_universe = data.get('currentUniverse', 'default')
         if 'upgrades' in data:
             update_data[f"universes.{current_universe}"] = data['upgrades']
+
+        logger.info(f"Updating data for user {telegram_id}: {update_data}")
 
         result = users_collection.update_one(
             {'telegram_id': telegram_id},
