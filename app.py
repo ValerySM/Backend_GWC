@@ -49,7 +49,7 @@ def authenticate():
         users_collection = db['users']
 
         data = request.json
-        telegram_id = data.get('telegram_id')
+        telegram_id = str(data.get('telegram_id'))
         username = data.get('username')
 
         logger.info(f"Auth request for: {telegram_id}, {username}")
@@ -102,7 +102,7 @@ def update_user_data():
         logger.info(f"Request data: {request.get_data(as_text=True)}")
 
         data = request.json
-        telegram_id = data.get('telegram_id')
+        telegram_id = str(data.get('telegram_id'))
         total_clicks = data.get('totalClicks')
 
         if not telegram_id:
