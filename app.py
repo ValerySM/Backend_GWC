@@ -5,17 +5,14 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import logging
 
-# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# MongoDB configuration
 mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
@@ -34,12 +31,7 @@ def close_db(error):
 
 @app.route('/')
 def hello():
-    try:
-        db = get_db()
-        return "Hello, World! MongoDB connected successfully."
-    except Exception as e:
-        logger.error(f"MongoDB connection failed: {str(e)}")
-        return "Hello, World! Warning: MongoDB connection failed."
+    return "Hello, World! Application is running."
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
@@ -133,4 +125,6 @@ def log_message():
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
+    logger.info(f"App running on port {port}")
