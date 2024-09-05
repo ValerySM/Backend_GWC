@@ -82,11 +82,9 @@ def authenticate():
             'success': True,
             'telegram_id': user['telegram_id'],
             'username': user['username'],
-            'universe_data': {
-                'totalClicks': user.get('totalClicks', 0),
-                'universes': user.get('universes', {}),
-                'currentUniverse': user.get('currentUniverse', 'default')
-            }
+            'totalClicks': user.get('totalClicks', 0),
+            'currentUniverse': user.get('currentUniverse', 'default'),
+            'universes': user.get('universes', {})
         })
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
