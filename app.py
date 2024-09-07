@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
 import os
 import logging
 
@@ -12,20 +11,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mongodb_uri = os.getenv('MONGODB_URI')
-client = None
-db = None
-
-def get_db():
-    global client, db
-    if client is None:
-        try:
-            client = MongoClient(mongodb_uri)
-            client.admin.command('ismaster')  # This will raise an exception if can't connect
-            db = client['universe_game_db']
-        except ConnectionFailure:
-            logger.error("Server not available")
-            raise
-    return db
+client = MongoClient(mongodb_uri)
+db = client['universe_game_db']
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
@@ -38,7 +25,6 @@ def authenticate():
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-        db = get_db()
         user = db.users.find_one({'telegram_id': telegram_id})
 
         if not user:
@@ -58,9 +44,6 @@ def authenticate():
         }
         logger.info(f"Sending response: {response_data}")
         return jsonify(response_data)
-    except ConnectionFailure:
-        logger.error("Failed to connect to the database")
-        return jsonify({'success': False, 'error': 'Database connection error'}), 500
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
@@ -80,7 +63,6 @@ def update_user_data():
         if total_clicks is None:
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
 
-        db = get_db()
         result = db.users.update_one(
             {'telegram_id': telegram_id},
             {'$set': {'totalClicks': total_clicks}},
@@ -93,9 +75,6 @@ def update_user_data():
         else:
             logger.warning(f"No changes made for telegram_id: {telegram_id}")
             return jsonify({'success': False, 'error': 'No changes made'}), 400
-    except ConnectionFailure:
-        logger.error("Failed to connect to the database")
-        return jsonify({'success': False, 'error': 'Database connection error'}), 500
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
