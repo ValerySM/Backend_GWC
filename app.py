@@ -50,11 +50,6 @@ def authenticate():
 
         user = users_collection.find_one({'telegram_id': telegram_id})
 
-        if user:
-            logger.info(f"Found existing user: {user}")
-        else:
-            logger.info(f"User not found, creating new user")
-
         if not user:
             new_user = {
                 'telegram_id': telegram_id,
