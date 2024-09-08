@@ -9,6 +9,7 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +33,11 @@ def close_db(error):
 @app.route('/')
 def hello():
     return "Hello, World! Application is running."
+    
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.error(f"Unhandled exception: {str(e)}")
+    return jsonify(error=str(e)), 500    
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
@@ -79,7 +85,7 @@ def authenticate():
         return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
