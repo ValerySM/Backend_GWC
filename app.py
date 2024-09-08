@@ -93,31 +93,43 @@ def update_user_data():
         users_collection = db['users']
 
         data = request.json
-        logger.info(f"Received data: {data}")
-
         telegram_id = str(data.get('telegram_id'))
+        total_clicks = data.get('totalClicks')
+
+        logger.info(f"Received update request for telegram_id: {telegram_id}, total_clicks: {total_clicks}")
+
         if not telegram_id:
-            logger.error("No Telegram ID provided")
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-        update_result = users_collection.update_one(
+        if total_clicks is None:
+            return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
+
+        update_data = {
+            'totalClicks': total_clicks,
+            'currentUniverse': data.get('currentUniverse', 'default'),
+        }
+
+        current_universe = data.get('currentUniverse', 'default')
+        if 'upgrades' in data:
+            update_data[f"universes.{current_universe}"] = data['upgrades']
+
+        logger.info(f"Updating user data: {update_data}")
+
+        result = users_collection.update_one(
             {'telegram_id': telegram_id},
-            {'$set': data},
+            {'$set': update_data},
             upsert=True
         )
 
-        logger.info(f"Update result: {update_result.raw_result}")
-
-        if update_result.modified_count > 0 or update_result.upserted_id:
+        if result.modified_count > 0 or result.upserted_id:
             logger.info(f"Successfully updated user data for telegram_id: {telegram_id}")
             return jsonify({'success': True})
         else:
             logger.warning(f"No changes made for telegram_id: {telegram_id}")
-            return jsonify({'success': True, 'message': 'No changes were necessary'})
-
+            return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/log', methods=['POST'])
 def log_message():
