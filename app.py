@@ -1,10 +1,13 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
+from dotenv import load_dotenv
 import os
 import jwt
 import datetime
 from functools import wraps
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -12,12 +15,10 @@ CORS(app)
 mongodb_uri = os.getenv('MONGODB_URI')
 jwt_secret = os.getenv('JWT_SECRET', 'your-secret-key')
 
-# Создаем MongoClient внутри функции, чтобы избежать проблем с форком
-def get_db():
-    client = MongoClient(mongodb_uri)
-    return client['universe_game_db']
+client = MongoClient(mongodb_uri)
+db = client['universe_game_db']
+users_collection = db['users']
 
-# Декоратор для проверки JWT токена
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -25,10 +26,14 @@ def token_required(f):
         if not token:
             return jsonify({'message': 'Token is missing!'}), 401
         try:
-            jwt.decode(token, jwt_secret, algorithms=['HS256'])
+            token = token.split()[1]  # Remove 'Bearer ' prefix
+            data = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+            current_user = users_collection.find_one({'telegram_id': data['telegram_id']})
+            if not current_user:
+                return jsonify({'message': 'User not found!'}), 401
         except:
             return jsonify({'message': 'Token is invalid!'}), 401
-        return f(*args, **kwargs)
+        return f(current_user, *args, **kwargs)
     return decorated
 
 @app.route('/api/auth', methods=['POST'])
@@ -39,9 +44,6 @@ def authenticate():
 
     if not telegram_id or not username:
         return jsonify({'success': False, 'error': 'Missing telegram_id or username'}), 400
-
-    db = get_db()
-    users_collection = db['users']
 
     user = users_collection.find_one({'telegram_id': telegram_id})
 
@@ -55,7 +57,6 @@ def authenticate():
         }
         users_collection.insert_one(user)
 
-    # Создаем JWT токен
     token = jwt.encode({
         'telegram_id': telegram_id,
         'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
@@ -66,39 +67,45 @@ def authenticate():
         'token': token
     })
 
-@app.route('/api/user', methods=['GET'])
+@app.route('/api/user', methods=['GET', 'PUT'])
 @token_required
-def get_user_data():
-    token = request.headers.get('Authorization')
-    decoded = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-    telegram_id = decoded['telegram_id']
-    
-    db = get_db()
-    users_collection = db['users']
-    user = users_collection.find_one({'telegram_id': telegram_id})
-    
-    if user:
+def user_data(current_user):
+    if request.method == 'GET':
         return jsonify({
             'success': True,
-            'telegram_id': user['telegram_id'],
-            'username': user['username'],
-            'totalClicks': user['totalClicks'],
-            'currentUniverse': user['currentUniverse'],
-            'universes': user['universes']
+            'telegram_id': current_user['telegram_id'],
+            'username': current_user['username'],
+            'totalClicks': current_user['totalClicks'],
+            'currentUniverse': current_user['currentUniverse'],
+            'universes': current_user['universes']
         })
-    else:
-        return jsonify({'success': False, 'error': 'User not found'}), 404
+    elif request.method == 'PUT':
+        data = request.json
+        update_data = {}
+        if 'totalClicks' in data:
+            update_data['totalClicks'] = data['totalClicks']
+        if 'currentUniverse' in data:
+            update_data['currentUniverse'] = data['currentUniverse']
+        if 'universes' in data:
+            update_data['universes'] = data['universes']
+        
+        if update_data:
+            users_collection.update_one(
+                {'telegram_id': current_user['telegram_id']},
+                {'$set': update_data}
+            )
+            return jsonify({'success': True, 'message': 'User data updated successfully'}), 200
+        else:
+            return jsonify({'success': False, 'message': 'No data to update'}), 400
 
 @app.route('/api/log', methods=['POST'])
 @token_required
-def log_message():
+def log_message(current_user):
     data = request.json
     message = data.get('message')
-    
     if not message:
         return jsonify({'success': False, 'error': 'No message provided'}), 400
-    
-    print(f"Log: {message}")  # Просто выводим сообщение в консоль
+    print(f"Log from {current_user['username']}: {message}")
     return jsonify({'success': True})
 
 if __name__ == '__main__':
