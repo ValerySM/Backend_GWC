@@ -9,7 +9,6 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,11 +32,6 @@ def close_db(error):
 @app.route('/')
 def hello():
     return "Hello, World! Application is running."
-    
-@app.errorhandler(Exception)
-def handle_exception(e):
-    logger.error(f"Unhandled exception: {str(e)}")
-    return jsonify(error=str(e)), 500    
 
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
@@ -46,19 +40,24 @@ def authenticate():
         users_collection = db['users']
 
         data = request.json
-        telegram_id = str(data.get('telegramId'))
+        telegram_id = str(data.get('telegram_id'))
         username = data.get('username')
 
-        logger.info(f"Received auth request for telegramId: {telegram_id}, username: {username}")
+        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
 
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-        user = users_collection.find_one({'telegramId': telegram_id})
+        user = users_collection.find_one({'telegram_id': telegram_id})
+
+        if user:
+            logger.info(f"Found existing user: {user}")
+        else:
+            logger.info(f"User not found, creating new user")
 
         if not user:
             new_user = {
-                'telegramId': telegram_id,
+                'telegram_id': telegram_id,
                 'username': username,
                 'totalClicks': 0,
                 'currentUniverse': 'default',
@@ -75,7 +74,7 @@ def authenticate():
 
         response_data = {
             'success': True,
-            'telegramId': user['telegramId'],
+            'telegram_id': user['telegram_id'],
             'username': user['username'],
             'totalClicks': user.get('totalClicks', 0),
             'currentUniverse': user.get('currentUniverse', 'default'),
@@ -85,7 +84,7 @@ def authenticate():
         return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
@@ -94,10 +93,10 @@ def update_user_data():
         users_collection = db['users']
 
         data = request.json
-        telegram_id = str(data.get('telegramId'))
+        telegram_id = str(data.get('telegram_id'))
         total_clicks = data.get('totalClicks')
 
-        logger.info(f"Received update request for telegramId: {telegram_id}, total_clicks: {total_clicks}")
+        logger.info(f"Received update request for telegram_id: {telegram_id}, total_clicks: {total_clicks}")
 
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
@@ -117,16 +116,16 @@ def update_user_data():
         logger.info(f"Updating user data: {update_data}")
 
         result = users_collection.update_one(
-            {'telegramId': telegram_id},
+            {'telegram_id': telegram_id},
             {'$set': update_data},
             upsert=True
         )
 
         if result.modified_count > 0 or result.upserted_id:
-            logger.info(f"Successfully updated user data for telegramId: {telegram_id}")
+            logger.info(f"Successfully updated user data for telegram_id: {telegram_id}")
             return jsonify({'success': True})
         else:
-            logger.warning(f"No changes made for telegramId: {telegram_id}")
+            logger.warning(f"No changes made for telegram_id: {telegram_id}")
             return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
