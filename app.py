@@ -3,9 +3,6 @@ from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import jwt
-import datetime
-from functools import wraps
 import logging
 
 load_dotenv()
@@ -17,8 +14,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mongodb_uri = os.getenv('MONGODB_URI')
-jwt_secret = os.getenv('JWT_SECRET', 'your-secret-key')
-
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
@@ -33,19 +28,6 @@ def close_db(error):
     db = g.pop('db', None)
     if db is not None:
         db.client.close()
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'message': 'Token is missing!'}), 401
-        try:
-            jwt.decode(token, jwt_secret, algorithms=['HS256'])
-        except:
-            return jsonify({'message': 'Token is invalid!'}), 401
-        return f(*args, **kwargs)
-    return decorated
 
 @app.route('/')
 def hello():
@@ -63,10 +45,15 @@ def authenticate():
 
         logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
 
-        if not telegram_id or not username:
-            return jsonify({'success': False, 'error': 'Missing telegram_id or username'}), 400
+        if not telegram_id:
+            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
         user = users_collection.find_one({'telegram_id': telegram_id})
+
+        if user:
+            logger.info(f"Found existing user: {user}")
+        else:
+            logger.info(f"User not found, creating new user")
 
         if not user:
             new_user = {
@@ -85,14 +72,8 @@ def authenticate():
                 user['username'] = username
                 logger.info(f"Updated username for user: {user}")
 
-        token = jwt.encode({
-            'telegram_id': telegram_id,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
-        }, jwt_secret, algorithm='HS256')
-
         response_data = {
             'success': True,
-            'token': token,
             'telegram_id': user['telegram_id'],
             'username': user['username'],
             'totalClicks': user.get('totalClicks', 0),
@@ -106,7 +87,6 @@ def authenticate():
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/users', methods=['PUT'])
-@token_required
 def update_user_data():
     try:
         db = get_db()
@@ -152,14 +132,10 @@ def update_user_data():
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/log', methods=['POST'])
-@token_required
 def log_message():
     try:
         data = request.json
-        message = data.get('message')
-        if not message:
-            return jsonify({'success': False, 'error': 'No message provided'}), 400
-        logger.info(f"Client log: {message}")
+        logger.info(f"Client log: {data}")
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error logging message: {str(e)}")
