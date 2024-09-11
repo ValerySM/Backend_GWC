@@ -28,6 +28,36 @@ def close_db(error):
     db = g.pop('db', None)
     if db is not None:
         db.client.close()
+        
+
+
+@app.route('/api/user', methods=['GET'])
+def get_user_data():
+    try:
+        db = get_db()
+        users_collection = db['users']
+
+        telegram_id = request.args.get('telegram_id')
+        
+        if not telegram_id:
+            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
+
+        user = users_collection.find_one({'telegram_id': telegram_id})
+
+        if user:
+            response_data = {
+                'success': True,
+                'telegram_id': user['telegram_id'],
+                'totalClicks': user.get('totalClicks', 0)
+            }
+            logger.info(f"Sending user data: {response_data}")
+            return jsonify(response_data)
+        else:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting user data: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500        
 
 @app.route('/')
 def hello():
