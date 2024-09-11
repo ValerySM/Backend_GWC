@@ -102,6 +102,7 @@ def authenticate():
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/users', methods=['PUT'])
+@app.route('/api/users', methods=['PUT'])
 def update_user_data():
     try:
         db = get_db()
@@ -120,6 +121,11 @@ def update_user_data():
         if total_clicks is None:
             logger.error("No totalClicks provided")
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
+
+        # Проверка на минимальное значение кликов
+        if total_clicks < 0:
+            logger.error("Invalid totalClicks value: less than 0")
+            return jsonify({'success': False, 'error': 'Invalid totalClicks value'}), 400
 
         result = users_collection.update_one(
             {'telegram_id': telegram_id},
