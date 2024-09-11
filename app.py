@@ -41,44 +41,29 @@ def authenticate():
 
         data = request.json
         telegram_id = str(data.get('telegram_id'))
-        username = data.get('username')
 
-        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
+        logger.info(f"Received auth request for telegram_id: {telegram_id}")
 
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
         user = users_collection.find_one({'telegram_id': telegram_id})
 
-        if user:
-            logger.info(f"Found existing user: {user}")
-        else:
-            logger.info(f"User not found, creating new user")
-
         if not user:
             new_user = {
                 'telegram_id': telegram_id,
-                'username': username,
-                'totalClicks': 0,
-                'currentUniverse': 'default',
-                'universes': {}
+                'totalClicks': 0
             }
             result = users_collection.insert_one(new_user)
             user = new_user
             logger.info(f"Created new user: {user}")
         else:
-            if user['username'] != username:
-                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
-                user['username'] = username
-                logger.info(f"Updated username for user: {user}")
+            logger.info(f"Found existing user: {user}")
 
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
-            'username': user['username'],
-            'totalClicks': user.get('totalClicks', 0),
-            'currentUniverse': user.get('currentUniverse', 'default'),
-            'universes': user.get('universes', {})
+            'totalClicks': user.get('totalClicks', 0)
         }
         logger.info(f"Sending response: {response_data}")
         return jsonify(response_data)
@@ -104,20 +89,9 @@ def update_user_data():
         if total_clicks is None:
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
 
-        update_data = {
-            'totalClicks': total_clicks,
-            'currentUniverse': data.get('currentUniverse', 'default'),
-        }
-
-        current_universe = data.get('currentUniverse', 'default')
-        if 'upgrades' in data:
-            update_data[f"universes.{current_universe}"] = data['upgrades']
-
-        logger.info(f"Updating user data: {update_data}")
-
         result = users_collection.update_one(
             {'telegram_id': telegram_id},
-            {'$set': update_data},
+            {'$set': {'totalClicks': total_clicks}},
             upsert=True
         )
 
@@ -129,16 +103,6 @@ def update_user_data():
             return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-@app.route('/api/log', methods=['POST'])
-def log_message():
-    try:
-        data = request.json
-        logger.info(f"Client log: {data}")
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Error logging message: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
