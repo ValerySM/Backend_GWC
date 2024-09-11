@@ -102,7 +102,6 @@ def authenticate():
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/users', methods=['PUT'])
-@app.route('/api/users', methods=['PUT'])
 def update_user_data():
     try:
         db = get_db()
