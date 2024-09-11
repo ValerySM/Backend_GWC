@@ -84,9 +84,11 @@ def update_user_data():
         logger.info(f"Received update request for telegram_id: {telegram_id}, total_clicks: {total_clicks}")
 
         if not telegram_id:
+            logger.error("No Telegram ID provided")
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
         if total_clicks is None:
+            logger.error("No totalClicks provided")
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
 
         result = users_collection.update_one(
