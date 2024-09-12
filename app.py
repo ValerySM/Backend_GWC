@@ -4,6 +4,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import logging
+import urllib.parse
 
 load_dotenv()
 
@@ -14,6 +15,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mongodb_uri = os.getenv('MONGODB_URI')
+WEBAPP_URL = 'https://valerysm.github.io/Frontend_GWC/'
+
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
@@ -72,13 +75,19 @@ def authenticate():
                 user['username'] = username
                 logger.info(f"Updated username for user: {user}")
 
+        # Generate webapp URL with user data
+        encoded_username = urllib.parse.quote(username)
+        encoded_total_clicks = urllib.parse.quote(str(user.get('totalClicks', 0)))
+        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&username={encoded_username}&totalClicks={encoded_total_clicks}"
+
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
             'username': user['username'],
             'totalClicks': user.get('totalClicks', 0),
             'currentUniverse': user.get('currentUniverse', 'default'),
-            'universes': user.get('universes', {})
+            'universes': user.get('universes', {}),
+            'webapp_url': webapp_url
         }
         logger.info(f"Sending response: {response_data}")
         return jsonify(response_data)
