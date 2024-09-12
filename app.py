@@ -22,8 +22,12 @@ if not mongodb_uri:
 
 def get_db():
     if 'db' not in g:
-        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-        g.db = client['universe_game_db']
+        try:
+            client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            g.db = client['universe_game_db']
+        except Exception as e:
+            logger.error(f"Error connecting to MongoDB: {str(e)}")
+            raise ValueError("Failed to connect to MongoDB")
     return g.db
 
 @app.teardown_appcontext
@@ -59,22 +63,23 @@ def authenticate():
             new_user = {
                 'telegram_id': telegram_id,
                 'totalClicks': 0,
-                'currentUniverse': 'default',
+                'currentUniverse': 'EatsApp',
                 'universes': {}
             }
             result = users_collection.insert_one(new_user)
             user = new_user
             logger.info(f"Created new user: {user}")
 
-        # Generate webapp URL with user data
+        # Генерация ссылки с учётом текущей вселенной
         encoded_total_clicks = urllib.parse.quote(str(user.get('totalClicks', 0)))
-        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&totalClicks={encoded_total_clicks}"
+        current_universe = urllib.parse.quote(str(user.get('currentUniverse', 'EatsApp')))
+        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&totalClicks={encoded_total_clicks}&currentUniverse={current_universe}"
 
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
             'totalClicks': user.get('totalClicks', 0),
-            'currentUniverse': user.get('currentUniverse', 'default'),
+            'currentUniverse': user.get('currentUniverse', 'EatsApp'),
             'universes': user.get('universes', {}),
             'webapp_url': webapp_url
         }
@@ -83,6 +88,7 @@ def authenticate():
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
@@ -104,10 +110,10 @@ def update_user_data():
 
         update_data = {
             'totalClicks': total_clicks,
-            'currentUniverse': data.get('currentUniverse', 'default'),
+            'currentUniverse': data.get('currentUniverse', 'EatsApp'),
         }
 
-        current_universe = data.get('currentUniverse', 'default')
+        current_universe = data.get('currentUniverse', 'EatsApp')
         if 'upgrades' in data:
             update_data[f"universes.{current_universe}"] = data['upgrades']
 
@@ -124,7 +130,7 @@ def update_user_data():
             return jsonify({'success': True})
         else:
             logger.warning(f"No changes made for telegram_id: {telegram_id}")
-            return jsonify({'success': False, 'error': 'No changes made'}), 400
+            return jsonify({'success': True, 'message': 'No changes needed'}), 200
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
