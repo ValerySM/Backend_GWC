@@ -44,9 +44,8 @@ def authenticate():
 
         data = request.json
         telegram_id = str(data.get('telegram_id'))
-        username = data.get('username')
 
-        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
+        logger.info(f"Received auth request for telegram_id: {telegram_id}")
 
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
@@ -57,11 +56,8 @@ def authenticate():
             logger.info(f"Found existing user: {user}")
         else:
             logger.info(f"User not found, creating new user")
-
-        if not user:
             new_user = {
                 'telegram_id': telegram_id,
-                'username': username,
                 'totalClicks': 0,
                 'currentUniverse': 'default',
                 'universes': {}
@@ -69,21 +65,14 @@ def authenticate():
             result = users_collection.insert_one(new_user)
             user = new_user
             logger.info(f"Created new user: {user}")
-        else:
-            if user['username'] != username:
-                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
-                user['username'] = username
-                logger.info(f"Updated username for user: {user}")
 
         # Generate webapp URL with user data
-        encoded_username = urllib.parse.quote(username)
         encoded_total_clicks = urllib.parse.quote(str(user.get('totalClicks', 0)))
-        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&username={encoded_username}&totalClicks={encoded_total_clicks}"
+        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&totalClicks={encoded_total_clicks}"
 
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
-            'username': user['username'],
             'totalClicks': user.get('totalClicks', 0),
             'currentUniverse': user.get('currentUniverse', 'default'),
             'universes': user.get('universes', {}),
