@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 def get_mongo_client():
     username = quote_plus(os.environ.get('MONGO_USERNAME', 'valerysm'))
@@ -53,5 +53,18 @@ def update_clicks():
     else:
         return jsonify({"error": "User not found"}), 404
 
+@app.route('/api/log', methods=['POST', 'OPTIONS'])
+def log_message():
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.json
+        print(f"Client log: {data}")
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error logging message: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=True)
