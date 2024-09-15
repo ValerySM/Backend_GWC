@@ -13,26 +13,31 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# MongoDB URI из .env файла
 mongodb_uri = os.getenv('MONGODB_URI')
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
+# Функция для получения подключения к базе данных
 def get_db():
     if 'db' not in g:
         client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
         g.db = client['universe_game_db']
     return g.db
 
+# Закрытие подключения к базе данных после запроса
 @app.teardown_appcontext
 def close_db(error):
     db = g.pop('db', None)
     if db is not None:
         db.client.close()
 
+# Простой роут для проверки работы сервера
 @app.route('/')
 def hello():
     return "Hello, World! Application is running."
 
+# Роут для аутентификации пользователя
 @app.route('/api/auth', methods=['POST'])
 def authenticate():
     try:
@@ -48,14 +53,18 @@ def authenticate():
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
+        # Поиск пользователя в базе данных
         user = users_collection.find_one({'telegram_id': telegram_id})
 
         if user:
+            # Если пользователь найден, обновляем его username при необходимости
             logger.info(f"Found existing user: {user}")
+            if user['username'] != username:
+                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
+                user['username'] = username
+                logger.info(f"Updated username for user: {user}")
         else:
-            logger.info(f"User not found, creating new user")
-
-        if not user:
+            # Если пользователь не найден, создаем нового пользователя
             new_user = {
                 'telegram_id': telegram_id,
                 'username': username,
@@ -66,12 +75,8 @@ def authenticate():
             result = users_collection.insert_one(new_user)
             user = new_user
             logger.info(f"Created new user: {user}")
-        else:
-            if user['username'] != username:
-                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
-                user['username'] = username
-                logger.info(f"Updated username for user: {user}")
 
+        # Возвращаем данные пользователя
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
@@ -86,6 +91,7 @@ def authenticate():
         logger.error(f"Error during authentication: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
+# Роут для обновления данных пользователя
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
     try:
@@ -104,11 +110,13 @@ def update_user_data():
         if total_clicks is None:
             return jsonify({'success': False, 'error': 'No totalClicks provided'}), 400
 
+        # Обновление данных пользователя в базе данных
         update_data = {
             'totalClicks': total_clicks,
             'currentUniverse': data.get('currentUniverse', 'default'),
         }
 
+        # Добавляем данные об улучшениях вселенной, если они есть
         current_universe = data.get('currentUniverse', 'default')
         if 'upgrades' in data:
             update_data[f"universes.{current_universe}"] = data['upgrades']
@@ -131,6 +139,7 @@ def update_user_data():
         logger.error(f"Error updating user data: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
+# Роут для логирования сообщений с фронтенда
 @app.route('/api/log', methods=['POST'])
 def log_message():
     try:
@@ -141,6 +150,7 @@ def log_message():
         logger.error(f"Error logging message: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
+# Запуск приложения
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
