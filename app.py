@@ -4,7 +4,6 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import logging
-import urllib.parse
 
 load_dotenv()
 
@@ -15,19 +14,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mongodb_uri = os.getenv('MONGODB_URI')
-WEBAPP_URL = 'https://valerysm.github.io/Frontend_GWC/'
-
 if not mongodb_uri:
     raise ValueError("No MONGODB_URI set for Flask application")
 
 def get_db():
     if 'db' not in g:
-        try:
-            client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-            g.db = client['universe_game_db']
-        except Exception as e:
-            logger.error(f"Error connecting to MongoDB: {str(e)}")
-            raise ValueError("Failed to connect to MongoDB")
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+        g.db = client['universe_game_db']
     return g.db
 
 @app.teardown_appcontext
@@ -48,8 +41,9 @@ def authenticate():
 
         data = request.json
         telegram_id = str(data.get('telegram_id'))
+        username = data.get('username')
 
-        logger.info(f"Received auth request for telegram_id: {telegram_id}")
+        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
 
         if not telegram_id:
             return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
@@ -60,35 +54,37 @@ def authenticate():
             logger.info(f"Found existing user: {user}")
         else:
             logger.info(f"User not found, creating new user")
+
+        if not user:
             new_user = {
                 'telegram_id': telegram_id,
+                'username': username,
                 'totalClicks': 0,
-                'currentUniverse': 'EatsApp',
+                'currentUniverse': 'default',
                 'universes': {}
             }
             result = users_collection.insert_one(new_user)
             user = new_user
             logger.info(f"Created new user: {user}")
-
-        # Генерация ссылки с учётом текущей вселенной
-        encoded_total_clicks = urllib.parse.quote(str(user.get('totalClicks', 0)))
-        current_universe = urllib.parse.quote(str(user.get('currentUniverse', 'EatsApp')))
-        webapp_url = f"{WEBAPP_URL}?telegram_id={telegram_id}&totalClicks={encoded_total_clicks}&currentUniverse={current_universe}"
+        else:
+            if user['username'] != username:
+                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
+                user['username'] = username
+                logger.info(f"Updated username for user: {user}")
 
         response_data = {
             'success': True,
             'telegram_id': user['telegram_id'],
+            'username': user['username'],
             'totalClicks': user.get('totalClicks', 0),
-            'currentUniverse': user.get('currentUniverse', 'EatsApp'),
-            'universes': user.get('universes', {}),
-            'webapp_url': webapp_url
+            'currentUniverse': user.get('currentUniverse', 'default'),
+            'universes': user.get('universes', {})
         }
         logger.info(f"Sending response: {response_data}")
         return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error during authentication: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
 
 @app.route('/api/users', methods=['PUT'])
 def update_user_data():
@@ -110,10 +106,10 @@ def update_user_data():
 
         update_data = {
             'totalClicks': total_clicks,
-            'currentUniverse': data.get('currentUniverse', 'EatsApp'),
+            'currentUniverse': data.get('currentUniverse', 'default'),
         }
 
-        current_universe = data.get('currentUniverse', 'EatsApp')
+        current_universe = data.get('currentUniverse', 'default')
         if 'upgrades' in data:
             update_data[f"universes.{current_universe}"] = data['upgrades']
 
@@ -130,7 +126,7 @@ def update_user_data():
             return jsonify({'success': True})
         else:
             logger.warning(f"No changes made for telegram_id: {telegram_id}")
-            return jsonify({'success': True, 'message': 'No changes needed'}), 200
+            return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
