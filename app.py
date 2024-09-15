@@ -42,15 +42,15 @@ def authenticate():
         users_collection = db.users
 
         data = request.json
-        user_id = str(data.get('user_id'))
+        telegram_id = str(data.get('telegram_id'))
         username = data.get('username')
 
-        logger.info(f"Received auth request for user_id: {user_id}, username: {username}")
+        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
 
-        if not user_id:
-            return jsonify({'success': False, 'error': 'No User ID provided'}), 400
+        if not telegram_id:
+            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
 
-        user = users_collection.find_one({'_id': user_id})
+        user = users_collection.find_one({'_id': telegram_id})
 
         if user:
             logger.info(f"Found existing user: {user}")
@@ -60,7 +60,7 @@ def authenticate():
                 logger.info(f"Updated username for user: {user}")
         else:
             new_user = {
-                '_id': user_id,
+                '_id': telegram_id,
                 'username': username,
                 'totalClicks': 0,
                 'currentUniverse': 'default',
@@ -91,15 +91,15 @@ def update_clicks():
         users_collection = db.users
 
         data = request.json
-        user_id = str(data.get('user_id'))
+        telegram_id = str(data.get('telegram_id'))
         total_clicks = data.get('totalClicks')
         current_universe = data.get('currentUniverse', 'default')
         upgrades = data.get('upgrades', {})
 
-        logger.info(f"Received update request for user_id: {user_id}, total_clicks: {total_clicks}")
+        logger.info(f"Received update request for telegram_id: {telegram_id}, total_clicks: {total_clicks}")
 
-        if not user_id or total_clicks is None:
-            return jsonify({'success': False, 'error': 'User ID and totalClicks are required'}), 400
+        if not telegram_id or total_clicks is None:
+            return jsonify({'success': False, 'error': 'Telegram ID and totalClicks are required'}), 400
 
         update_data = {
             'totalClicks': total_clicks,
@@ -110,16 +110,16 @@ def update_clicks():
         logger.info(f"Updating user data: {update_data}")
 
         result = users_collection.update_one(
-            {'_id': user_id},
+            {'_id': telegram_id},
             {'$set': update_data},
             upsert=True
         )
 
         if result.modified_count > 0 or result.upserted_id:
-            logger.info(f"Successfully updated user data for user_id: {user_id}")
+            logger.info(f"Successfully updated user data for telegram_id: {telegram_id}")
             return jsonify({'success': True})
         else:
-            logger.warning(f"No changes made for user_id: {user_id}")
+            logger.warning(f"No changes made for telegram_id: {telegram_id}")
             return jsonify({'success': False, 'error': 'No changes made'}), 400
     except Exception as e:
         logger.error(f"Error updating user data: {str(e)}")
