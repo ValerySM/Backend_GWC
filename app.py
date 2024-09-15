@@ -1,12 +1,9 @@
-import os
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from dotenv import load_dotenv
-import logging
 from urllib.parse import quote_plus
-
-load_dotenv()
+import os
+import logging
 
 app = Flask(__name__)
 CORS(app)
@@ -14,116 +11,67 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# MongoDB URI from environment variables
-username = quote_plus(os.getenv('MONGO_USERNAME', 'valerysm'))
-password = quote_plus(os.getenv('MONGO_PASSWORD', 'Janysar190615!@'))
-MONGO_URI = f"mongodb+srv://{username}:{password}@betatest.4k3xh.mongodb.net/?retryWrites=true&w=majority&appName=betaTest"
+def get_mongo_client():
+    username = quote_plus(os.environ.get('MONGO_USERNAME', 'valerysm'))
+    password = quote_plus(os.environ.get('MONGO_PASSWORD', 'Janysar190615!@'))
+    MONGO_URI = f"mongodb+srv://{username}:{password}@betatest.4k3xh.mongodb.net/?retryWrites=true&w=majority&appName=betaTest"
+    return MongoClient(MONGO_URI)
 
-def get_db():
-    if 'db' not in g:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        g.db = client.universe_game_db
-    return g.db
+@app.route('/auth', methods=['POST'])
+def auth():
+    telegram_id = request.json.get('telegram_id')
+    if not telegram_id:
+        return jsonify({"error": "Telegram ID is required"}), 400
 
-@app.teardown_appcontext
-def close_db(error):
-    db = g.pop('db', None)
-    if db is not None:
-        db.client.close()
-
-@app.route('/')
-def hello():
-    return "Hello, World! Universe Game Application is running."
-
-@app.route('/api/auth', methods=['POST'])
-def authenticate():
-    try:
-        db = get_db()
-        users_collection = db.users
-
-        data = request.json
-        telegram_id = str(data.get('telegram_id'))
-        username = data.get('username')
-
-        logger.info(f"Received auth request for telegram_id: {telegram_id}, username: {username}")
-
-        if not telegram_id:
-            return jsonify({'success': False, 'error': 'No Telegram ID provided'}), 400
-
-        user = users_collection.find_one({'_id': telegram_id})
-
-        if user:
-            logger.info(f"Found existing user: {user}")
-            if user.get('username') != username:
-                users_collection.update_one({'_id': user['_id']}, {'$set': {'username': username}})
-                user['username'] = username
-                logger.info(f"Updated username for user: {user}")
-        else:
-            new_user = {
-                '_id': telegram_id,
-                'username': username,
-                'totalClicks': 0,
-                'currentUniverse': 'default',
-                'universes': {}
-            }
-            users_collection.insert_one(new_user)
-            user = new_user
-            logger.info(f"Created new user: {user}")
-
-        response_data = {
-            'success': True,
-            'user_id': user['_id'],
-            'username': user.get('username'),
-            'totalClicks': user.get('totalClicks', 0),
-            'currentUniverse': user.get('currentUniverse', 'default'),
-            'universes': user.get('universes', {})
-        }
-        logger.info(f"Sending response: {response_data}")
-        return jsonify(response_data)
-    except Exception as e:
-        logger.error(f"Error during authentication: {str(e)}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-@app.route('/api/update_clicks', methods=['POST'])
-def update_clicks():
-    try:
-        db = get_db()
-        users_collection = db.users
-
-        data = request.json
-        telegram_id = str(data.get('telegram_id'))
-        total_clicks = data.get('totalClicks')
-        current_universe = data.get('currentUniverse', 'default')
-        upgrades = data.get('upgrades', {})
-
-        logger.info(f"Received update request for telegram_id: {telegram_id}, total_clicks: {total_clicks}")
-
-        if not telegram_id or total_clicks is None:
-            return jsonify({'success': False, 'error': 'Telegram ID and totalClicks are required'}), 400
-
-        update_data = {
-            'totalClicks': total_clicks,
-            'currentUniverse': current_universe,
-            f"universes.{current_universe}": upgrades
-        }
-
-        logger.info(f"Updating user data: {update_data}")
-
-        result = users_collection.update_one(
-            {'_id': telegram_id},
-            {'$set': update_data},
-            upsert=True
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        users = db.users
+        user = users.find_one_and_update(
+            {"_id": telegram_id},
+            {"$setOnInsert": {"totalClicks": 0, "currentUniverse": "default", "universes": {}}},
+            upsert=True,
+            return_document=True
         )
 
-        if result.modified_count > 0 or result.upserted_id:
-            logger.info(f"Successfully updated user data for telegram_id: {telegram_id}")
-            return jsonify({'success': True})
-        else:
-            logger.warning(f"No changes made for telegram_id: {telegram_id}")
-            return jsonify({'success': False, 'error': 'No changes made'}), 400
-    except Exception as e:
-        logger.error(f"Error updating user data: {str(e)}")
-        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+    logger.info(f"User authenticated: {telegram_id}")
+    return jsonify({
+        "success": True,
+        "user_id": user['_id'],
+        "totalClicks": user['totalClicks'],
+        "currentUniverse": user['currentUniverse'],
+        "universes": user['universes'],
+        "isNewUser": user.get('totalClicks', 0) == 0
+    }), 200
+
+@app.route('/update_clicks', methods=['POST'])
+def update_clicks():
+    telegram_id = request.json.get('telegram_id')
+    total_clicks = request.json.get('totalClicks')
+    current_universe = request.json.get('currentUniverse', 'default')
+    upgrades = request.json.get('upgrades', {})
+    
+    if not telegram_id or total_clicks is None:
+        return jsonify({"error": "Telegram ID and totalClicks are required"}), 400
+
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        users = db.users
+        result = users.find_one_and_update(
+            {"_id": telegram_id},
+            {"$set": {
+                "totalClicks": total_clicks,
+                "currentUniverse": current_universe,
+                f"universes.{current_universe}": upgrades
+            }},
+            return_document=True
+        )
+
+    if result:
+        logger.info(f"Updated clicks for user {telegram_id}: {total_clicks}")
+        return jsonify({"success": True, "totalClicks": result['totalClicks']}), 200
+    else:
+        logger.warning(f"User not found: {telegram_id}")
+        return jsonify({"error": "User not found"}), 404
 
 @app.route('/api/log', methods=['POST'])
 def log_message():
