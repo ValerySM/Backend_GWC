@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 def get_mongo_client():
     username = quote_plus(os.environ.get('MONGO_USERNAME', 'valerysm'))
@@ -16,8 +16,8 @@ def get_mongo_client():
     MONGO_URI = f"mongodb+srv://{username}:{password}@betatest.4k3xh.mongodb.net/?retryWrites=true&w=majority&appName=betaTest"
     return MongoClient(MONGO_URI)
 
-@app.route('/start', methods=['POST'])
-def start():
+@app.route('/auth', methods=['POST'])
+def auth():
     user_id = request.json.get('user_id')
     if not user_id:
         return jsonify({"error": "User ID is required"}), 400
@@ -52,8 +52,7 @@ def start():
         )
 
     user_data = {k: v for k, v in user.items() if k != '_id'}
-    user_data['telegram_id'] = user_id
-
+    user_data['telegram_id'] = str(user['_id'])  # Add telegram_id to the response
     return jsonify(user_data), 200
 
 @app.route('/update', methods=['POST'])
@@ -68,16 +67,28 @@ def update():
     with get_mongo_client() as client:
         db = client.universe_game_db
         users = db.users
-        result = users.update_one({"_id": user_id}, {"$set": updates})
-        if result.modified_count == 0:
-            return jsonify({"error": "User not found or no updates made"}), 404
-        return jsonify({"status": "success"}), 200
+        result = users.find_one_and_update(
+            {"_id": user_id},
+            {"$set": updates},
+            return_document=True
+        )
+
+    if result:
+        user_data = {k: v for k, v in result.items() if k != '_id'}
+        user_data['telegram_id'] = str(result['_id'])  # Add telegram_id to the response
+        return jsonify(user_data), 200
+    else:
+        return jsonify({"error": "User not found"}), 404
 
 @app.route('/log', methods=['POST'])
 def log():
     data = request.json
     print(f"Client log: {data['message']}")
     return jsonify({"status": "success"}), 200
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Welcome to the GWC Backend!", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
