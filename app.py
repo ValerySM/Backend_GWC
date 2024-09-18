@@ -50,9 +50,8 @@ def auth():
             upsert=True,
             return_document=True
         )
-
-    user_data = {k: v for k, v in user.items() if k != '_id'}
     user_data['telegram_id'] = str(user['_id'])  # Add telegram_id to the response
+    user_data = {k: v for k, v in user.items() if k != '_id'}
     return jsonify(user_data), 200
 
 @app.route('/update', methods=['POST'])
