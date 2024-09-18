@@ -1,102 +1,87 @@
 import os
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
-import logging
-from datetime import datetime
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Подключение к MongoDB
-try:
-    client = MongoClient(os.getenv('MONGO_URI'))
-    db = client['gwc_database']
-    users = db['users']
-except PyMongoError as e:
-    logging.error(f"Failed to connect to MongoDB: {e}")
-    exit(1)
+def get_mongo_client():
+    username = quote_plus(os.environ.get('MONGO_USERNAME', 'valerysm'))
+    password = quote_plus(os.environ.get('MONGO_PASSWORD', 'Janysar190615!@'))
+    MONGO_URI = f"mongodb+srv://{username}:{password}@betatest.4k3xh.mongodb.net/?retryWrites=true&w=majority&appName=betaTest"
+    return MongoClient(MONGO_URI)
 
-@app.route('/start', methods=['POST'])
-def start():
-    data = request.json
-    if not data or 'user_id' not in data:
-        abort(400, description="Missing user_id in request")
-    
-    user_id = data['user_id']
-    
-    try:
-        user = users.find_one({'user_id': user_id})
-        if not user:
-            # Создаем нового пользователя с начальными данными
-            new_user = {
-                'user_id': user_id,
-                'totalClicks': 0,
-                'energy': 1000,
-                'energyMax': 1000,
-                'regenRate': 1,
-                'damageLevel': 1,
-                'energyLevel': 1,
-                'regenLevel': 1,
-                'gameScores': {
-                    'appleCatcher': 0,
-                    'purblePairs': 0
+@app.route('/auth', methods=['POST'])
+def auth():
+    user_id = request.json.get('user_id')
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        users = db.users
+        user = users.find_one_and_update(
+            {"_id": user_id},
+            {"$setOnInsert": {
+                "totalClicks": 0,
+                "energy": 1000,
+                "energyMax": 1000,
+                "regenRate": 1,
+                "damageLevel": 1,
+                "energyLevel": 1,
+                "regenLevel": 1,
+                "gameScores": {
+                    "appleCatcher": 0,
+                    "purblePairs": 0
                 },
-                'eweData': {
-                    'tokens': 0,
-                    'farmedTokens': 0,
-                    'isFarming': False,
-                    'startTime': None,
-                    'elapsedFarmingTime': 0
-                },
-                'lastUpdate': datetime.now()
-            }
-            users.insert_one(new_user)
-            user = new_user
-            logging.info(f"Created new user: {user_id}")
-        else:
-            logging.info(f"Found existing user: {user_id}")
+                "eweData": {
+                    "tokens": 0,
+                    "farmedTokens": 0,
+                    "isFarming": False,
+                    "startTime": None,
+                    "elapsedFarmingTime": 0
+                }
+            }},
+            upsert=True,
+            return_document=True
+        )
 
-        # Удаляем '_id' из ответа, так как оно не сериализуется в JSON
-        user.pop('_id', None)
-        return jsonify(user)
-    except PyMongoError as e:
-        logging.error(f"Database error: {e}")
-        abort(500, description="Internal server error")
+    user['_id'] = str(user['_id'])  # Convert ObjectId to string
+    return jsonify(user), 200
 
 @app.route('/update', methods=['POST'])
 def update():
     data = request.json
     if not data or 'user_id' not in data or 'updates' not in data:
-        abort(400, description="Missing user_id or updates in request")
+        return jsonify({"error": "Missing user_id or updates in request"}), 400
     
     user_id = data['user_id']
     updates = data['updates']
     
-    try:
-        result = users.update_one({'user_id': user_id}, {'$set': updates})
-        if result.modified_count == 0:
-            logging.warning(f"No updates made for user: {user_id}")
-            abort(404, description="User not found")
-        logging.info(f"Updated user data: {user_id}")
-        return jsonify({'status': 'success'})
-    except PyMongoError as e:
-        logging.error(f"Database error: {e}")
-        abort(500, description="Internal server error")
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        users = db.users
+        result = users.find_one_and_update(
+            {"_id": user_id},
+            {"$set": updates},
+            return_document=True
+        )
 
-@app.route('/test', methods=['GET'])
-def test():
-    logging.info("Test endpoint accessed")
-    return "Backend is running on Render!", 200
+    if result:
+        result['_id'] = str(result['_id'])  # Convert ObjectId to string
+        return jsonify(result), 200
+    else:
+        return jsonify({"error": "User not found"}), 404
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Welcome to the GWC Backend!", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    logging.info(f"Starting application on port {port}")
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
