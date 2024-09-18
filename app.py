@@ -4,10 +4,9 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
-import telebot
-from telebot.types import WebAppInfo
 import logging
 from datetime import datetime
+from bot import bot, process_webhook_update
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -25,9 +24,6 @@ try:
 except PyMongoError as e:
     logging.error(f"Failed to connect to MongoDB: {e}")
     exit(1)
-
-# Инициализация бота
-bot = telebot.TeleBot(os.getenv('BOT_TOKEN'))
 
 @app.route('/start', methods=['POST'])
 def start():
@@ -96,36 +92,12 @@ def update():
         logging.error(f"Database error: {e}")
         abort(500, description="Internal server error")
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.from_user.id
-    logging.info(f"Received /start command from user {user_id}")
-    webapp_url = os.getenv('WEBAPP_URL')
-    if not webapp_url:
-        bot.reply_to(message, "Sorry, the game is currently unavailable.")
-        logging.error("WEBAPP_URL is not set")
-        return
-    
-    bot.reply_to(
-        message,
-        f"Welcome! Version 2.0 - {datetime.now()}. Click the button below to start playing.",
-        reply_markup=telebot.types.InlineKeyboardMarkup().add(
-            telebot.types.InlineKeyboardButton(
-                text="Play",
-                web_app=WebAppInfo(url=f"{webapp_url}?user_id={user_id}")
-            )
-        )
-    )
-    logging.info(f"Sent welcome message to user {user_id}")
-
 @app.route('/bot', methods=['POST'])
 def bot_webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        logging.info(f"Received update: {update}")
-        bot.process_new_updates([update])
-        return ''
+        logging.info(f"Received update: {json_string}")
+        return process_webhook_update(json_string)
     else:
         logging.warning("Received non-JSON request to /bot endpoint")
         abort(403)
@@ -136,4 +108,6 @@ def test():
     return "Bot is running on Render!", 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    port = int(os.environ.get('PORT', 8080))
+    logging.info(f"Starting application on port {port}")
+    app.run(host='0.0.0.0', port=port)
