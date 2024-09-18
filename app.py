@@ -6,7 +6,6 @@ from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
-from bot import bot, process_webhook_update
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -92,20 +91,10 @@ def update():
         logging.error(f"Database error: {e}")
         abort(500, description="Internal server error")
 
-@app.route('/bot', methods=['POST'])
-def bot_webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        logging.info(f"Received update: {json_string}")
-        return process_webhook_update(json_string)
-    else:
-        logging.warning("Received non-JSON request to /bot endpoint")
-        abort(403)
-
 @app.route('/test', methods=['GET'])
 def test():
     logging.info("Test endpoint accessed")
-    return "Bot is running on Render!", 200
+    return "Backend is running on Render!", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
