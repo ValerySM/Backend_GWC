@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from urllib.parse import quote_plus
+from bson.objectid import ObjectId
 import os
 
 app = Flask(__name__)
@@ -23,7 +24,7 @@ def auth():
         db = client.universe_game_db
         users = db.users
         user = users.find_one_and_update(
-            {"_id": user_id},
+            {"_id": ObjectId(user_id)},
             {"$setOnInsert": {
                 "totalClicks": 0,
                 "energy": 1000,
@@ -66,7 +67,7 @@ def update():
         db = client.universe_game_db
         users = db.users
         result = users.find_one_and_update(
-            {"_id": user_id},
+            {"_id": ObjectId(user_id)},
             {"$set": updates},
             return_document=True
         )
@@ -83,7 +84,7 @@ def get_user(user_id):
     with get_mongo_client() as client:
         db = client.universe_game_db
         users = db.users
-        user = users.find_one({"_id": user_id})
+        user = users.find_one({"_id": ObjectId(user_id)})
         if user:
             user_data = {k: v for k, v in user.items() if k != '_id'}
             user_data['telegram_id'] = str(user['_id'])
