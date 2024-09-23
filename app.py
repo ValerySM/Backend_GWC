@@ -16,10 +16,7 @@ def get_mongo_client():
 @app.route('/auth', methods=['POST'])
 def auth():
     user_id = request.json.get('user_id')
-    print(f"Received auth request for user_id: {user_id}")
-    
     if not user_id:
-        print("Error: User ID is missing")
         return jsonify({"error": "User ID is required"}), 400
 
     with get_mongo_client() as client:
@@ -35,11 +32,22 @@ def auth():
                 "damageLevel": 1,
                 "energyLevel": 1,
                 "regenLevel": 1,
+                "gameScores": {
+                    "appleCatcher": 0,
+                    "purblePairs": 0
+                },
+                "eweData": {
+                    "tokens": 0,
+                    "farmedTokens": 0,
+                    "isFarming": False,
+                    "startTime": None,
+                    "elapsedFarmingTime": 0
+                }
             }},
             upsert=True,
             return_document=True
         )
-    
+
     user_data = {k: v for k, v in user.items() if k != '_id'}
     user_data['telegram_id'] = str(user['_id'])
     print(f"Sending user data: {user_data}")
@@ -69,6 +77,19 @@ def update():
         return jsonify(user_data), 200
     else:
         return jsonify({"error": "User not found"}), 404
+
+@app.route('/user/<user_id>', methods=['GET'])
+def get_user(user_id):
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        users = db.users
+        user = users.find_one({"_id": user_id})
+        if user:
+            user_data = {k: v for k, v in user.items() if k != '_id'}
+            user_data['telegram_id'] = str(user['_id'])
+            return jsonify(user_data), 200
+        else:
+            return jsonify({"error": "User not found"}), 404
 
 @app.route('/log', methods=['POST'])
 def log():
