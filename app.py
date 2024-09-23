@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from urllib.parse import quote_plus
-from bson.objectid import ObjectId
 import os
 
 app = Flask(__name__)
@@ -24,8 +23,9 @@ def auth():
         db = client.universe_game_db
         users = db.users
         user = users.find_one_and_update(
-            {"_id": ObjectId(user_id)},
+            {"telegram_id": str(user_id)},
             {"$setOnInsert": {
+                "telegram_id": str(user_id),
                 "totalClicks": 0,
                 "energy": 1000,
                 "energyMax": 1000,
@@ -50,7 +50,6 @@ def auth():
         )
 
     user_data = {k: v for k, v in user.items() if k != '_id'}
-    user_data['telegram_id'] = str(user['_id'])
     print(f"Sending user data: {user_data}")
     return jsonify(user_data), 200
 
@@ -67,14 +66,13 @@ def update():
         db = client.universe_game_db
         users = db.users
         result = users.find_one_and_update(
-            {"_id": ObjectId(user_id)},
+            {"telegram_id": str(user_id)},
             {"$set": updates},
             return_document=True
         )
 
     if result:
         user_data = {k: v for k, v in result.items() if k != '_id'}
-        user_data['telegram_id'] = str(result['_id'])
         return jsonify(user_data), 200
     else:
         return jsonify({"error": "User not found"}), 404
@@ -84,10 +82,9 @@ def get_user(user_id):
     with get_mongo_client() as client:
         db = client.universe_game_db
         users = db.users
-        user = users.find_one({"_id": ObjectId(user_id)})
+        user = users.find_one({"telegram_id": str(user_id)})
         if user:
             user_data = {k: v for k, v in user.items() if k != '_id'}
-            user_data['telegram_id'] = str(user['_id'])
             return jsonify(user_data), 200
         else:
             return jsonify({"error": "User not found"}), 404
