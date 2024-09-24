@@ -3,6 +3,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from urllib.parse import quote_plus
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -75,7 +76,30 @@ def update():
         user_data = {k: v for k, v in result.items() if k != '_id'}
         return jsonify(user_data), 200
     else:
-        return jsonify({"error": "User not found"}), 404
+        new_user = {"telegram_id": str(user_id), **updates}
+        users.insert_one(new_user)
+        return jsonify(new_user), 201
+
+@app.route('/backup', methods=['POST'])
+def backup():
+    data = request.json
+    if not data or 'user_id' not in data or 'gameData' not in data:
+        return jsonify({"error": "Missing user_id or gameData in request"}), 400
+    
+    user_id = data['user_id']
+    game_data = data['gameData']
+    
+    backup_data = {
+        "user_id": user_id,
+        "gameData": game_data,
+        "timestamp": datetime.now()
+    }
+
+    with get_mongo_client() as client:
+        db = client.universe_game_db
+        db.backups.insert_one(backup_data)
+    
+    return jsonify({"status": "success"}), 201
 
 @app.route('/user/<user_id>', methods=['GET'])
 def get_user(user_id):
