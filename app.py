@@ -70,9 +70,12 @@ def update():
         clicks_to_add = updates.pop('totalClicks', 0)
         
         update_operations = {
-            "$set": updates,
-            "$inc": {"totalClicks": clicks_to_add}
+            "$set": updates
         }
+        
+        # Добавляем инкремент totalClicks только если есть что добавлять
+        if clicks_to_add:
+            update_operations["$inc"] = {"totalClicks": clicks_to_add}
         
         result = users.find_one_and_update(
             {"telegram_id": str(user_id)},
