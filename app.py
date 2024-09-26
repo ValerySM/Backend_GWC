@@ -65,9 +65,18 @@ def update():
     with get_mongo_client() as client:
         db = client.universe_game_db
         users = db.users
+        
+        # Отделяем totalClicks от остальных обновлений
+        clicks_to_add = updates.pop('totalClicks', 0)
+        
+        update_operations = {
+            "$set": updates,
+            "$inc": {"totalClicks": clicks_to_add}
+        }
+        
         result = users.find_one_and_update(
             {"telegram_id": str(user_id)},
-            {"$set": updates},
+            update_operations,
             return_document=True
         )
 
